@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNSアカウント診断(3分)</title>
+<style>
+  :root { --main:#06c755; --bg:#f6f8f7; --text:#222; --sub:#666; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif; background:var(--bg); color:var(--text); line-height:1.7; }
+  .wrap { max-width:640px; margin:0 auto; padding:20px 16px 60px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  .lead { color:var(--sub); font-size:14px; margin-bottom:20px; }
+  .area { font-size:12px; font-weight:bold; color:var(--main); margin-top:24px; }
+  .card { background:#fff; border-radius:12px; padding:16px; margin:8px 0; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .q { font-weight:bold; font-size:15px; margin-bottom:8px; }
+  label { display:block; padding:10px 12px; margin:6px 0; border:1px solid #ddd; border-radius:8px; font-size:14px; cursor:pointer; }
+  label:has(input:checked) { border-color:var(--main); background:#eafaf0; }
+  input[type=radio] { margin-right:8px; }
+  select { width:100%; padding:10px; font-size:15px; border-radius:8px; border:1px solid #ddd; }
+  button, .btn { display:block; width:100%; text-align:center; background:var(--main); color:#fff; border:none; border-radius:999px; padding:16px; font-size:16px; font-weight:bold; margin-top:24px; cursor:pointer; text-decoration:none; }
+  .err { color:#d33; font-size:13px; margin-top:8px; display:none; }
+  #result { display:none; }
+  .score { font-size:44px; font-weight:bold; color:var(--main); text-align:center; }
+  .level { text-align:center; font-weight:bold; font-size:18px; }
+  .bar { display:flex; align-items:center; font-size:13px; margin:6px 0; }
+  .bar span.n { width:96px; }
+  .bar .track { flex:1; height:10px; background:#e8e8e8; border-radius:5px; overflow:hidden; }
+  .bar .fill { height:100%; background:var(--main); }
+  .bar span.p { width:36px; text-align:right; }
+  .weak { background:#fff8e6; border-left:4px solid #f5a623; padding:12px; border-radius:6px; font-size:14px; }
+  .note { font-size:12px; color:var(--sub); margin-top:10px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div id="form">
+  <h1>SNSアカウント診断</h1>
+  <p class="lead">10問・約3分。結果はこの画面で分かり、LINEで改善ヒントをお届けします。</p>
+  <div id="questions"></div>
+
+  <div class="area">最後に</div>
+  <div class="card">
+    <div class="q">あなたの職種に近いものを選んでください</div>
+    <select id="job">
+      <option value="">選択してください</option>
+      <option>美容・サロン</option><option>飲食</option><option>士業・コンサル</option>
+      <option>小売・EC</option><option>医療・介護</option><option>教育・スクール</option>
+      <option>不動産・建築</option><option>フリーランス</option><option>その他</option>
+    </select>
+  </div>
+  <div class="err" id="err">未回答の質問があります。すべて選択してください。</div>
+  <button id="submit">診断結果を見る</button>
+</div>
+
+<div id="result">
+  <h1>診断結果</h1>
+  <div class="card">
+    <div class="score"><span id="total"></span><span style="font-size:18px"> / 20点</span></div>
+    <div class="level" id="level"></div>
+  </div>
+  <div class="card" id="bars"></div>
+  <div class="weak">
+    <b>優先して直すところ:<span id="weakName"></span></b><br>
+    <span id="weakHint"></span>
+  </div>
+  <a class="btn" id="lineBtn" href="#">LINEで改善ヒントを受け取る</a>
+  <p class="note">ボタンを押すとLINEが開き、結果が入力された状態になります。そのまま送信してください。</p>
+</div>
+
+</div>
+
+<script>
+// ===== 設定(ここだけ書き換えてください) =====
+const LINE_ID = "@xxxxxxx";   // LINE公式アカウントのベーシックID(@付き)
+// ============================================
+
+const AREAS = {
+  profile:  { name:"プロフィール", hint:"「誰の・何の」アカウントかを1行で伝える型に直すと、フォロー率が変わります。" },
+  flow:     { name:"集客・導線",   hint:"投稿は見られていても、次の行動先がないと成果になりません。プロフィールに行動先を1つだけ置きましょう。" },
+  continue: { name:"発信の継続",   hint:"毎日頑張るより「週3回の型」を決めるほうが続きます。投稿の型を固定しましょう。" },
+  content:  { name:"投稿内容・ネタ", hint:"自分が言いたいことより、お客様がよく聞く質問を投稿にするとネタが尽きません。" },
+  analyze:  { name:"分析・改善",   hint:"見るのは「保存数」と「プロフィールへのアクセス」の2つで十分です。伸びた投稿を真似するところから始めましょう。" }
+};
+// 同点時の優先順
+const PRIORITY = ["profile","flow","continue","content","analyze"];
+
+const QUESTIONS = [
+  { area:"profile", q:"プロフィールを初めて見た人が、「誰の」「何の」アカウントか3秒で分かりますか?", o:["分かる","なんとなく分かる","分からない・自信がない"] },
+  { area:"profile", q:"プロフィールに、実績・強み・お客様のメリットが書かれていますか?", o:["書いてある","一部だけ書いてある","書いていない"] },
+  { area:"continue", q:"投稿の頻度はどれくらいですか?", o:["週3回以上","週1〜2回","月数回以下・ほぼしていない"] },
+  { area:"continue", q:"投稿を3か月以上続けられていますか?", o:["続けられている","続けたり止まったりしている","すぐ止まってしまう"] },
+  { area:"content", q:"「何を投稿するか」で悩むことはありますか?", o:["ほとんどない","ときどき悩む","いつも悩む"] },
+  { area:"content", q:"投稿の内容は、お客様の悩みや興味に合わせて作っていますか?", o:["意識して作っている","意識することもある","自分が書きたいことが中心"] },
+  { area:"flow", q:"プロフィールから、予約・問い合わせ・LINE登録などへの案内がありますか?", o:["明確にある","あるが分かりにくい","ない"] },
+  { area:"flow", q:"SNS経由での問い合わせ・予約・購入はありますか?", o:["定期的にある","たまにある","ほぼない"] },
+  { area:"analyze", q:"投稿ごとの反応(保存・いいね・リーチなど)を見ていますか?", o:["毎週チェックしている","ときどき見る","ほとんど見ていない"] },
+  { area:"analyze", q:"反応が良かった投稿をもとに、次の投稿を改善していますか?", o:["している","たまにしている","していない"] }
+];
+
+const AREA_LABEL = { profile:"領域1 プロフィール", continue:"領域2 発信の継続", content:"領域3 投稿内容・ネタ", flow:"領域4 集客・導線", analyze:"領域5 分析・改善" };
+
+// 質問を描画
+(function render(){
+  const box = document.getElementById("questions");
+  let lastArea = "";
+  QUESTIONS.forEach((item, i) => {
+    if (item.area !== lastArea) {
+      box.insertAdjacentHTML("beforeend", `<div class="area">${AREA_LABEL[item.area]}</div>`);
+      lastArea = item.area;
+    }
+    const opts = item.o.map((t, k) =>
+      `<label><input type="radio" name="q${i}" value="${2-k}">${t}</label>`).join("");
+    box.insertAdjacentHTML("beforeend",
+      `<div class="card"><div class="q">Q${i+1}. ${item.q}</div>${opts}</div>`);
+  });
+})();
+
+document.getElementById("submit").addEventListener("click", () => {
+  const scores = { profile:0, flow:0, continue:0, content:0, analyze:0 };
+  let total = 0;
+  for (let i = 0; i < QUESTIONS.length; i++) {
+    const c = document.querySelector(`input[name=q${i}]:checked`);
+    if (!c) { document.getElementById("err").style.display = "block"; return; }
+    const v = Number(c.value);
+    scores[QUESTIONS[i].area] += v;
+    total += v;
+  }
+  document.getElementById("err").style.display = "none";
+
+  const level = total >= 15 ? "上級" : total >= 8 ? "中級" : "初級";
+  const title = { "上級":"仕組み化で伸ばす段階", "中級":"あと一歩で成果が出る段階", "初級":"土台づくりから始める段階" }[level];
+
+  // 最も低い領域(同点は PRIORITY の順)
+  let weak = PRIORITY[0];
+  PRIORITY.forEach(k => { if (scores[k] < scores[weak]) weak = k; });
+
+  document.getElementById("total").textContent = total;
+  document.getElementById("level").textContent = `${level}:${title}`;
+  document.getElementById("weakName").textContent = AREAS[weak].name;
+  document.getElementById("weakHint").textContent = AREAS[weak].hint;
+
+  document.getElementById("bars").innerHTML = PRIORITY.map(k =>
+    `<div class="bar"><span class="n">${AREAS[k].name}</span>
+     <div class="track"><div class="fill" style="width:${scores[k]/4*100}%"></div></div>
+     <span class="p">${scores[k]}/4</span></div>`).join("");
+
+  // LINEに送るメッセージ(自動応答のキーワードに使う)
+  const job = document.getElementById("job").value || "未選択";
+  const msg = `診断結果:${level}(${total}点)\n弱点:${AREAS[weak].name}\n職種:${job}`;
+  document.getElementById("lineBtn").href =
+    `https://line.me/R/oaMessage/${LINE_ID}/?${encodeURIComponent(msg)}`;
+
+  document.getElementById("form").style.display = "none";
+  document.getElementById("result").style.display = "block";
+  window.scrollTo(0, 0);
+});
+</script>
+</body>
+</html>
